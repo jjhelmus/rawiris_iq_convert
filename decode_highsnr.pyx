@@ -1,10 +1,12 @@
 # cython: profile=True
 import numpy as np
+cimport cython
 
 
-def decode_highsnr(unsigned short [:] highsnr_data, int npoints):
+@cython.boundscheck(False)
+def decode_highsnr(unsigned short[:] highsnr_data, int npoints):
     """ Decode a pulsedata vector encoded in High SNR format. """
-    cdef float [:] decoded_data = np.empty((npoints, ), dtype=np.float32) 
+    cdef float[:] decoded_data = np.empty((npoints, ), dtype=np.float32)
     cdef unsigned short p
     for i in range(npoints):
         p = highsnr_data[i]
@@ -12,7 +14,7 @@ def decode_highsnr(unsigned short [:] highsnr_data, int npoints):
     return decoded_data
 
 
-cpdef decode_highsnr_point(unsigned short p, debug=False):
+cpdef float decode_highsnr_point(unsigned short p, debug=False):
     """ Decode a point encoded in High SNR format. """
 
     # find the sign_bit, exponent, and mantissa
@@ -27,7 +29,7 @@ cpdef decode_highsnr_point(unsigned short p, debug=False):
             val = -4096 + mantissa
         else:  # sign == 0
             val = 2048 + mantissa
-        r = val * 2.**(exponent -25)
+        r = val * 2. ** (exponent - 25)
         return r
     else:  # exponent == 0
         if sign_bit:
