@@ -7,6 +7,7 @@ import os
 
 import numpy as np
 
+import decode_highsnr
 
 class IrisTSFile:
     """
@@ -99,7 +100,7 @@ class IrisTSFile:
         highsnr_data = np.fromstring(buf, np.uint16)
 
         # return decoded data
-        return self._decode_highsnr(highsnr_data)
+        return decode_highsnr.decode_highsnr(highsnr_data)
 
     def read_all_pulse_data(self):
         """ Read and return all data from all pulses. """
@@ -108,14 +109,14 @@ class IrisTSFile:
             data[i, :npoints] = self.read_pulse_data(i)
         return data
 
-    def _decode_highsnr(self, highsnr_data):
+    def _decode_highsnr_python(self, highsnr_data):
         """ Decode a pulsedata vector encoded in High SNR format. """
         decoded_data = np.empty(highsnr_data.shape, dtype=np.float32)
         for i, p in enumerate(highsnr_data):
-            decoded_data[i] = self._decode_highsnr_point(p)
+            decoded_data[i] = self._decode_highsnr_point_python(p)
         return decoded_data
 
-    def _decode_highsnr_point(self, p, debug=False):
+    def _decode_highsnr_point_python(self, p, debug=False):
         """ Decode a point encoded in High SNR format. """
 
         # find the sign_bit
