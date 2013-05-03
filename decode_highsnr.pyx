@@ -1,12 +1,14 @@
 # cython: profile=True
 import numpy as np
+cimport numpy as np
 cimport cython
 
 
 @cython.boundscheck(False)
 def decode_highsnr(unsigned short[:] highsnr_data, int npoints):
     """ Decode a pulsedata vector encoded in High SNR format. """
-    cdef float[:] decoded_data = np.empty((npoints, ), dtype=np.float32)
+    cdef np.ndarray[np.float32_t, ndim = 1] decoded_data
+    decoded_data = np.empty((npoints, ), dtype=np.float32)
     cdef unsigned short p
     for i in range(npoints):
         p = highsnr_data[i]
