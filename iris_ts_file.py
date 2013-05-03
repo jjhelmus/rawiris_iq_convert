@@ -9,6 +9,7 @@ import numpy as np
 
 import decode_highsnr
 
+
 class IrisTSFile:
     """
     A class for working with IRIS TS files which hold IQ data
@@ -100,7 +101,7 @@ class IrisTSFile:
         highsnr_data = np.fromstring(buf, np.uint16)
 
         # return decoded data
-        return decode_highsnr.decode_highsnr(highsnr_data)
+        return decode_highsnr.decode_highsnr(highsnr_data, n_points)
 
     def read_all_pulse_data(self):
         """ Read and return all data from all pulses. """
