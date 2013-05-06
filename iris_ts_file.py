@@ -27,6 +27,8 @@ class IrisTSFile:
         Number of pulse in the file.
     pulse_info : dic
         Dictionary of
+    pulse_metadata : dic
+        Dict
 
     Private attributes
     ------------------
@@ -49,7 +51,7 @@ class IrisTSFile:
 
         f = open(filename, 'r')
 
-        self._hdr_dics = []
+        hdr_dics = []
         data_locations = []
         npoints = []
 
@@ -62,7 +64,7 @@ class IrisTSFile:
 
             # read and store the pulse header
             current_pulsehdr = self._get_rvptspulsehdr_dic(f)
-            self._hdr_dics.append(current_pulsehdr)
+            hdr_dics.append(current_pulsehdr)
 
             # record the location of the pulse data
             data_locations.append(f.tell())
@@ -76,6 +78,10 @@ class IrisTSFile:
             bytes_in_current_pulse = 2 * 2 * numvecs * viqperbin
             f.seek(bytes_in_current_pulse, 1)
 
+        # populate attributes from pulse header dictionaries
+        self.pulse_metadata = self.create_pulse_metadata(hdr_dics)
+        self.metadata = self.create_metadata(self.pulse_info)
+
         # set attributes
         self._f = f
         self.filename = filename
@@ -83,8 +89,281 @@ class IrisTSFile:
         self._npoints = np.array(npoints, dtype='int32')
         self.npulses = len(self._npoints)
         self._max_points = np.max(self._npoints)
+        self._hdr_dics = hdr_dics
 
         return
+
+    def create_metadata(self, pulseinfo):
+        """ Create a dictionary of metadata from pulseinfo dictionary. """
+
+        def float_array(key):
+            return np.array(float(pulseinfo[key]), dtype='float32')
+
+        d = {}
+        info_keys = pulseinfo.keys()
+        if 'iPolarization' in info_keys:
+            modes = {'0': 'Horizontal',
+                     '1': 'Vertical',
+                     '2': 'Alternating_horizontal_and_vertical',
+                     '3': 'Horizontal_and_vertical'}
+            d['polarization'] = modes[pulseinfo['iPolarization']]
+
+        if 'sSiteName' in info_keys:
+            d['site_name'] = pulseinfo['sSiteName']
+
+        if 'fPWidthUSec' in info_keys:
+            d['pulse_width'] = {
+                'data': float_array('fPWidthUSec'),
+                'long_name': 'Pulse width',
+                'units': 'microseconds',
+            }
+
+        if 'fDBzCalib' in info_keys:
+            d['calibration_reflectivity'] = {
+                'data': float_array('fDBzCalib'),
+                'long_name': 'Calibration reflectivity',
+                'units': 'dBz',
+                'comment': 'calibration at 1 km'
+            }
+
+        if 'iSampleSize' in info_keys:
+            d['pulses_per_ray'] = int(pulseinfo['iSampleSize'])
+
+        if 'fGdrOffset' in info_keys:
+            d['total_gain_ratio'] = {
+                'data': float_array('fGdrOffset'),
+                'long_name': 'Total gain ratio of the reciever channels',
+                'units': 'dB',
+                'comment': 'Valid in co-reciever systems',
+            }
+
+        if 'fXdrOffset' in info_keys:
+            d['reciever_gain_ratio'] = {
+                'data': float_array('fXdrOffset'),
+                'long_name': 'Ratio of reciever gain',
+                'units': 'dB',
+                'comment': 'Valid in dual reciever systems'
+            }
+
+        if 'fSyClkMHz' in info_keys:
+            d['system_clock_frequency_mhz'] = float(pulseinfo['fSyClkMHz'])
+
+        if 'fWavelengthCM' in info_keys:
+            d['wavelength_cm'] = float(pulseinfo['fWavelengthCM'])
+
+        if 'fSaturationDBM' in info_keys:
+            d['saturation_power'] = {
+                'data': float_array('fSaturationDBM'),
+                'long_name': 'Saturation power',
+                'units': 'dBm',
+                'comment': ('Power in dBm corresponding to a power '
+                            'magnitude of 1.0'),
+            }
+
+        # Ranges
+        if 'iRangeMask' in info_keys:
+            r_str = r_str = pulseinfo['iRangeMask'].split()
+            u16r = np.array([int(i) for i in r_str], dtype='uint16')
+            u8_0, u8_1 = divmod(u16r, 256)  # 2**8
+            u8 = np.empty((len(r_str) * 2,),  dtype='uint8')
+            u8[::2] = u8_0      # XXX these might be switched
+            u8[1::2] = u8_1
+            # need to determine array and uint8 bit order.
+
+        if 'fNoiseDBm' in info_keys:
+            noise = pulseinfo['fNoiseDBm'].split()
+            d['noise_level_0'] = {
+                'data': np.array([float(noise[0])], dtype='float32'),
+                'long_name': 'Noise level of first channel',
+                'units': 'dBm'
+            }
+
+            if len(noise) > 1:
+                d['noise_level_1'] = {
+                    'data': np.array([float(noise[1])], dtype='float32'),
+                    'long_name': 'Noise level for second channel',
+                    'units': 'dBm'
+                }
+
+        if 'fNoiseStdvDB' in info_keys:
+            noise = pulseinfo['fNoiseDBm'].split()
+            d['noise_standard_deviation_0'] = {
+                'data': np.array([float(noise[0])], dtype='float32'),
+                'long_name': ('Standard deviation of noise measuremnt for '
+                              'first channel'),
+                'units': 'dB',
+            }
+            if len(noise) > 1:
+                d['noise_standard_deviation_1'] = {
+                    'data': np.array([float(noise[1])], dtype='float32'),
+                    'long_name': ('Standard deviation of noise measurement '
+                                  'for second channel'),
+                    'units': 'dB',
+                }
+
+        if 'fNoiseRangeKM' in info_keys:
+            d['noise_range'] = {
+                'data': float_array('fNoiseRangeKM'),
+                'long_name': 'Range where noise sample was taken',
+                'units': 'km',
+            }
+
+        if 'fNoisePRFHz' in info_keys:
+            d['noise_prf'] = {
+                'data': float_array('fNoisePRFHz'),
+                'long_name': 'PRF rate when noise sample taken',
+                'units': 'hz',
+            }
+
+        if 'sVersionString' in info_keys:
+            d['iris_ts_file_version'] = pulseinfo['sVersionString']
+
+        return d
+
+    def create_pulse_metadata(self, hdr_dics):
+        """ Create a dictionary of pulse metadata from pulse header
+        dictionaries.
+        """
+
+        def int_array(key):
+            return np.array([int(d[key]) for d in hdr_dics], dtype='int32')
+
+        def degree_array(key):
+            d = np.array([float(d[key]) for d in hdr_dics], dtype='float32')
+            d *= 180. / 32768.
+            return d
+
+        def volt_array(key):
+            d = np.array([float(d[key]) for d in hdr_dics], dtype='float32')
+            d *= 0.446  # 0.446 volts = 1
+            return d
+
+        hdr_keys = hdr_dics[0].keys()
+        d = {}
+        if 'iSeqNum' in hdr_keys:
+            d['sequence_number'] = {
+                'data': int_array('iSeqNum'),
+                'long_name': 'Sequence Number',
+                'comment': ('Pulse sequence number, non-sequential values '
+                            'indicate pulses are missing'),
+            }
+
+        if 'iFlags' in hdr_keys:
+            d['flags'] = {
+                'data': int_array('iFlags'),
+                'long_name': 'Pulse status flags',
+                'comment': ('bit 1 set if data is valid\n'
+                            'bit 2 set if prior pulses are missing\n'
+                            'bit 3 set if first pulse in a trigger bank\n'
+                            'bit 4 set if last pulse in a trigger bank\n'
+                            'bit 5 set if trigger bank is beginning\n'
+                            'bit 6 set if triggers were blanked'),
+            }
+
+        if 'iTimeUTC' in hdr_keys:
+            d['time'] = {
+                'data': int_array('iTimeUTC'),
+                'long_name': 'Time in seconds since the Epoch',
+                'units': 'seconds since 1970-01-01T00:00:00Z',
+                'comment': ('Seconds since the UNIX epoch.\n'
+                            'Must be combined with time_nanoseconds to '
+                            'determine the time of the pulse'),
+            },
+
+        if 'iNanoUTC' in hdr_keys:
+            d['time_nanoseconds'] = {
+                'data': int_array('iNanoUTC'),
+                'long_name': 'Nanoseconds since time',
+                'units': 'nanoseconds since time',
+                'ancillary_variables': 'time',
+            }
+
+        if 'iTxPhase' in hdr_keys:
+            d['transmit_phase'] = {
+                'data': degree_array('iTxPhase'),
+                'long_name': 'Transmit phase',
+                'units': 'degrees',
+            }
+
+        if 'iPedAz' in hdr_keys:
+            d['pedestal_azimuth'] = {
+                'data': degree_array('iPedAz'),
+                'long_name': 'Pedestal azimuth angle',
+                'units': 'degrees',
+            }
+
+        if 'iPedEl' in hdr_keys:
+            d['pedestal_elevation'] = {
+                'data': degree_array('iPedEl'),
+                'long_name': 'Pedestal elevation angle',
+                'units': 'degrees',
+            }
+
+        if 'iAzV' in hdr_keys:
+            d['azimuth_velocity'] = {
+                'data': degree_array('iAzV'),
+                'long_name': 'Azimuth velocity',
+                'units': 'degrees_per_second',
+            }
+
+        if 'iElV' in hdr_keys:
+            d['elevation_velocity'] = {
+                'data': degree_array('iElV'),
+                'long_name': 'Elevation velocity',
+                'units': 'degrees_per_second',
+            }
+
+        if 'iAz' in hdr_keys:
+            d['azimuth'] = {
+                'data': degree_array('iAz'),
+                'long_name': 'Azimuth angle',
+                'units': 'degrees',
+            }
+
+        if 'iEl' in hdr_keys:
+            d['elevation'] = {
+                'data': degree_array('iEl'),
+                'long_name': 'Elevation angle',
+                'units': 'degrees'
+            }
+
+        if 'iNumVecs' in hdr_keys:
+            d['number_of_samples'] = {
+                'data': int_array('iNumVecs'),
+                'long_name': 'Samples in pulse',
+            }
+
+        if 'RX[0].fBurstMag' in hdr_keys:
+            d['pulse_burst_magnitude_0'] = {
+                'data': volt_array('RX[0].fBurstMag'),
+                'long_name': 'Magnitude of first channel pulse burst',
+                'units': 'volt',
+                'comment': 'Amplitude not power',
+            }
+
+        if 'RX[0].iBurstArg' in hdr_keys:
+            d['pulse_burst_phase_change_0'] = {
+                'data': degree_array('RX[0].iBurstArg'),
+                'long_name': 'Phase change from previous pulse',
+                'units': 'degrees',
+            }
+
+        if 'RX[1].fBurstMag' in hdr_keys:
+            d['pulse_burst_magnitude_1'] = {
+                'data': volt_array('RX[1].fBurstMag'),
+                'long_name': 'Magnitude of second channel pulse burst',
+                'units': 'volt',
+                'comment': 'Ampltide not power',
+            }
+
+        if 'RX[1].iBurstArg' in hdr_keys:
+            d['pulse_burst_phase_change_1'] = {
+                'data': degree_array('RX[1].iBurstArg'),
+                'long_name': 'Phase change from previous pulse',
+                'units': 'degrees'
+            }
+
+        return d
 
     def _get_rvptspulseinfo_dic(self, f):
         """ Read an ASCII rvptspulseinfo header. """
