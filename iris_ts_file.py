@@ -250,4 +250,21 @@ def write_iristsfile_to_netcdf(filename, iristsfile, format='NETCDF4'):
             i0[pulse_id] = i_data[:]
             q0[pulse_id] = q_data[:]
 
+    # Find and add the azimuth and elevation data
+    if 'iEl' in iristsfile._hdr_dics[0]:
+        iel = np.array([int(d['iEl']) for d in iristsfile._hdr_dics],
+                       dtype='float32')
+        elev = dataset.createVariable('elevation', 'f4', ('pulse', ))
+        elev[:] = iel / 32768. * 180.
+        elev.units = 'degrees'
+        elev.comment = 'Elevation'
+
+    if 'iAz' in iristsfile._hdr_dics[0]:
+        iaz = np.array([int(d['iAz']) for d in iristsfile._hdr_dics],
+                       dtype='float32')
+        azim = dataset.createVariable('azimuth', 'f4', ('pulse', ))
+        azim[:] = iaz / 32768. * 180.
+        azim.units = 'degrees'
+        azim.comment = 'Azimuth'
+
     dataset.close()
