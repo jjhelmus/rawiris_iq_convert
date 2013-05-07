@@ -289,7 +289,10 @@ def write_iristsfile_to_netcdf(filename, iristsfile, format='NETCDF4'):
     metadata = _create_metadata(iristsfile.pulse_info)
     for k, v in metadata.iteritems():
         if type(v) == dict:
-            _create_ncvar(v, dataset, k, ())
+            if k == 'range_locations':
+                _create_ncvar(v, dataset, k, ('sample', ))
+            else:
+                _create_ncvar(v, dataset, k, ())
         else:
             dataset.setncattr(k, v)
 
@@ -368,15 +371,28 @@ def _create_metadata(pulse_info):
                         'magnitude of 1.0'),
         }
 
-    # TODO Ranges
-    if 'iRangeMask' in info_keys:
-        r_str = r_str = pulse_info['iRangeMask'].split()
-        u16r = np.array([int(i) for i in r_str], dtype='uint16')
-        u8_0, u8_1 = divmod(u16r, 256)  # 2**8
-        u8 = np.empty((len(r_str) * 2,),  dtype='uint8')
-        u8[::2] = u8_0      # XXX these might be switched
-        u8[1::2] = u8_1
-        # need to determine array and uint8 bit order.
+    if 'iRangeMask' in info_keys and 'fRangeMaskRes' in info_keys:
+
+        # parse the range mask
+        range_str = pulse_info['iRangeMask']
+        int_vals = [int(i) for i in range_str.split()]
+        bin_str = ''.join([np.binary_repr(i, 16)[::-1] for i in int_vals])
+        bin_str = '1' + bin_str  # first gate is pulse burst
+        bin_array = np.array([i == '1' for i in bin_str])
+
+        # calculate the range locations
+        range_locations = np.arange(len(bin_array), dtype='float32')
+        range_locations = range_locations[bin_array]
+        range_locations *= float(pulse_info['fRangeMaskRes'])
+
+        d['range_locations'] = {
+            'data': range_locations,
+            'long_name': 'Range gate locations',
+            'units': 'meters',
+            'comments': ('Distance from the radar to the center of each '
+                         'range gate.\n'
+                         'First value is 0 to indicate the pulse burst.')
+        }
 
     if 'fNoiseDBm' in info_keys:
         noise = pulse_info['fNoiseDBm'].split()
